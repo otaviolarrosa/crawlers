@@ -1,71 +1,72 @@
-import os
-import shutil
-from os import walk
-import urllib3
+# -*- coding:utf-8 -*-
+import os, sys, argparse
+import urllib.parse
+from requests import get
+from urllib.request import urlopen
+from urllib.parse import urlparse
 from PIL import Image
-from selenium import webdriver
-from selenium.webdriver.common.by import By
-from webdriver_manager.firefox import GeckoDriverManager
 
-WORKING_DIRECTORY = f'/home/otaviolarrosa/dev/test/'
-PDF_NAME = 'bleach-chapter-2'
-URL = f'https://mangareader.cc/chapter/{PDF_NAME}'
-IMG_ELEMENT_ID_PREFIX = 'page'
+URL = 'https://mangareader.cc/chapter/'
+HTML_START_TAG = '<p id=arraydata style=display:none>'
+HTML_END_TAG = '</p>'
+downloaded_files = []
 
+def fetch(name):
+    manga_url = urllib.parse.urljoin(URL, str(name))
+    response = urlopen(manga_url)
+    response_code = response.status
+    print("Fetching file list")
+    if response_code == 200:
+        content = str(response.read())
+        start_index = content.index(HTML_START_TAG)
+        end_index = content.index(HTML_END_TAG)
+        list = ''
+        for idx in range(start_index + len(HTML_START_TAG), end_index):
+            list = list + content[idx]
+        return list.split(',')
 
-def download():
-    browser = webdriver.Firefox(executable_path=GeckoDriverManager().install())
-    browser.get(URL)
-    page = 1
-    browser.find_element(By.XPATH,
-                         '//*[@id="content"]/div/div/article/div[2]/div[3]/div[1]/div/select/option[2]').click()
-    a = browser.find_element(By.CLASS_NAME, 'comic_wraCon')
-    files = []
-    imgs = a.find_elements(By.TAG_NAME, 'img')
-    for img in imgs:
-        files.append(page)
-        http = urllib3.PoolManager()
-        r = http.request('GET', img.get_attribute('src'), preload_content=False)
-        with open(f'{WORKING_DIRECTORY}{page}', 'wb') as out:
-            shutil.copyfileobj(r, out)
-        r.release_conn()
-        page += 1
-        print(img.get_attribute('src'))
-    browser.close()
+def download(list):
+    for image_url in list:
+        file_path = urlparse(image_url)
+        file_name = os.path.basename(file_path.path)
+        print("Downloading: " + file_name)
+        with open(file_name, "wb") as file:
+            response = get(image_url)
+            file.write(response.content)
+            downloaded_files.append(file_name)
 
-    save_pdf(files)
-    delete_images()
-
-
-def delete_images():
-    files = next(walk(f'{WORKING_DIRECTORY}'), (None, None, []))[2]
-    files.remove(f'{PDF_NAME}.pdf')
-    for file in files:
-        print(f'deleting file {file}')
-        os.remove(f'{WORKING_DIRECTORY}{file}')
-
+def clean_cache():
+    directory_path = os.getcwd()
+    for file in downloaded_files:
+        os.remove(directory_path + '/' + file)
 
 def save_pdf(filenames):
-    images = [
-        Image.open(f'{WORKING_DIRECTORY}{f}')
-        for f in filenames
-    ]
-
-    pdf_path = f'{WORKING_DIRECTORY}{PDF_NAME}.pdf'
+    images = []
+    directory_path = os.getcwd()
+    for file in filenames:
+        images.append(Image.open(directory_path + '/' + file))
+        
+    pdf_path = directory_path + '/final.pdf' 
     images[0].save(
         pdf_path, "PDF", resolution=100.0, save_all=True, append_images=images[1:]
     )
-    shutil.move(f'{pdf_path}', f'{WORKING_DIRECTORY}/compiled/{PDF_NAME}.pdf')
 
-
-def get_element(browser, page):
-    return browser.find_element(By.ID, IMG_ELEMENT_ID_PREFIX + str(page))
-
+def main(argv):
+    parser = argparse.ArgumentParser()
+    parser.add_argument("-n", "--name", type=str, required=True)
+    args = parser.parse_args()
+    manga = args.name
+    try:
+        list = fetch(manga)
+        download(list)
+        save_pdf(downloaded_files)
+        clean_cache()
+    except Exception as e:
+        print('Error! Cleaning cache.')
+        print(e)
+        directory_path = os.getcwd()
+        for file in downloaded_files:
+            os.remove(directory_path + '/' + file)
 
 if __name__ == '__main__':
-    try:
-        download()
-    except Exception as e:
-        files = next(walk(f'{WORKING_DIRECTORY}'), (None, None, []))[2]
-        for file in files:
-            os.remove(f'{WORKING_DIRECTORY}{file}')
+    main(sys.argv[1:])
