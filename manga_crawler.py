@@ -40,13 +40,13 @@ def clean_cache():
     for file in downloaded_files:
         os.remove(directory_path + '/' + file)
 
-def save_pdf(filenames):
+def save_pdf(filenames, manga):
     images = []
     directory_path = os.getcwd()
     for file in filenames:
         images.append(Image.open(directory_path + '/' + file))
         
-    pdf_path = directory_path + '/final.pdf' 
+    pdf_path = directory_path + f'/{manga}.pdf'
     images[0].save(
         pdf_path, "PDF", resolution=100.0, save_all=True, append_images=images[1:]
     )
@@ -59,7 +59,7 @@ def main(argv):
     try:
         list = fetch(manga)
         download(list)
-        save_pdf(downloaded_files)
+        save_pdf(downloaded_files, manga)
         clean_cache()
     except Exception as e:
         print('Error! Cleaning cache.')
